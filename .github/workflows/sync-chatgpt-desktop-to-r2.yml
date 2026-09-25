@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: Force re-upload and R2 readback even when the version is unchanged
+        description: Force re-upload and R2 readback even when both versions are unchanged and every object is intact
         required: false
         default: false
         type: boolean
@@ -20,7 +20,9 @@ concurrency:
 
 jobs:
   sync:
-    runs-on: ubuntu-latest
+    # macOS: the DMG is mounted to read its app's version and check OpenAI's
+    # signature before anything is published.
+    runs-on: macos-latest
     timeout-minutes: 90
     env:
       R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}

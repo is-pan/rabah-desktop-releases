@@ -63,6 +63,24 @@ file. This includes pre-releases while Rabah Companion remains in testing.
 R2 retains only that selected version. Older installers remain available from
 GitHub Releases.
 
+## ChatGPT Desktop mirror
+
+Rabah Companion installs ChatGPT Desktop from `https://download.rabah.ai/codex/`
+only; the scheduled workflow is the one component that contacts OpenAI.
+
+- `codex/latest.json` lists each platform with its own version, the versioned
+  immutable object URL, SHA-256 and byte size. The Windows version is the MSIX
+  manifest's; the macOS version is read from the app inside the DMG.
+- The workflow runs on macOS. Before publishing it checks the MSIX identity
+  and architecture, and that the DMG's app is `com.openai.codex`, signed by
+  OpenAI (team `2DC432GLL2`) with an intact signature, and has an arm64
+  slice. Every upload is read back and compared before the catalog changes.
+- A scheduled run skips only when both platform versions match upstream and
+  every catalog object in R2 has its catalog size and SHA-256; otherwise it
+  mirrors again, so a missing or damaged object repairs itself.
+- R2 keeps the current and the previous version, so a download that started
+  from the previous catalog is not cut off by a publish.
+
 ## Security
 
 Never download Rabah Companion from an unlisted third-party mirror. Release
