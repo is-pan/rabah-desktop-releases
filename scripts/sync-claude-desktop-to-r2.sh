@@ -26,6 +26,7 @@ version_pattern='^[0-9]+(\.[0-9]+){1,3}$'
 size_of() { wc -c < "$1" | tr -d ' '; }
 sha256() { shasum -a 256 "$1" | awk '{print tolower($1)}'; }
 key_of() { printf '%s' "${1#"$base_url"/}"; }
+normalize_version() { printf '%s\n' "$1" | sed -E 's/(\.0)+$//'; }
 
 download() {
   local url="$1" destination="$2"
@@ -81,7 +82,7 @@ object_intact() {
 
 mirror_is_current() {
   local catalog="$1" url size sha key
-  [[ "$(jq -r '.platforms["windows-x86_64"].version // empty' "$catalog")" == "$windows_version" ]] || return 1
+  [[ "$(normalize_version "$(jq -r '.platforms["windows-x86_64"].version // empty' "$catalog")")" == "$(normalize_version "$windows_version")" ]] || return 1
   [[ "$(jq -r '.platforms["darwin-universal"].version // empty' "$catalog")" == "$macos_version" ]] || return 1
   while IFS=$'\t' read -r url size sha; do
     [[ -n "$url" && -n "$size" && -n "$sha" ]] || return 1
@@ -118,7 +119,7 @@ print(identity.attrib["Version"])
 PY2
 )"
 [[ "$manifest_version" =~ $version_pattern ]]
-[[ "$manifest_version" == "$windows_version" ]] || {
+[[ "$(normalize_version "$manifest_version")" == "$(normalize_version "$windows_version")" ]] || {
   printf 'Claude Windows redirect version and MSIX manifest version differ: %s != %s\n' "$windows_version" "$manifest_version" >&2
   exit 1
 }
@@ -165,7 +166,7 @@ windows_sha="$(sha256 "$work_dir/windows/Claude-x64.msix")"
 macos_sha="$(sha256 "$work_dir/macos/Claude-universal.dmg")"
 windows_size="$(size_of "$work_dir/windows/Claude-x64.msix")"
 macos_size="$(size_of "$work_dir/macos/Claude-universal.dmg")"
-windows_key="claude/windows/$windows_version/Claude-x64.msix"
+windows_key="claude/windows/$manifest_version/Claude-x64.msix"
 macos_key="claude/macos/$macos_version/Claude-universal.dmg"
 
 upload() {
