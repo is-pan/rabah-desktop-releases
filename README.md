@@ -1,6 +1,8 @@
-# Rabah Companion Releases
+# Rabah Desktop Releases
 
-Official binary release archive for **Rabah Companion** on macOS and Windows.
+Official binary release archive for **Rabah Desktop** on macOS and Windows.
+The former repository name redirects here. Historical tags and asset names
+retain the product name used when those versions shipped.
 
 The application source is maintained in a private repository. This public
 repository contains release metadata and downloadable installer assets only.
@@ -29,13 +31,10 @@ platforms were not reconstructed from installed applications.
 Each release includes a `SHA256SUMS` file. Verify the checksum before using an
 installer.
 
-Historical Windows installers are unsigned. Historical macOS builds use Apple
-Development signing rather than Developer ID distribution signing and Apple
-notarization. These signing states are not suitable for a general public
-release.
-
-A future stable release will require Windows Authenticode signing and macOS
-Developer ID signing, hardened runtime, notarization, and stapling.
+Windows installers are not Authenticode signed. Recent macOS packages use
+Developer ID distribution signing, hardened runtime, notarization and stapling;
+some early historical packages used Apple Development signing. Consult the
+release notes and verify the package's actual signature before installing.
 
 ## Download policy
 
@@ -43,29 +42,34 @@ Developer ID signing, hardened runtime, notarization, and stapling.
 - `download.rabah.ai`: primary download source for the latest complete macOS +
   Windows version only
 
-The fixed download paths are:
+The website download page is `https://www.rabah.ai/download/`.
+The new fixed download paths are:
 
-- `https://download.rabah.ai/latest/Rabah-Companion-Windows-x64-setup.exe`
-- `https://download.rabah.ai/latest/Rabah-Companion-macOS-arm64.dmg`
+- `https://download.rabah.ai/latest/Rabah-Desktop-Windows-x64-setup.exe`
+- `https://download.rabah.ai/latest/Rabah-Desktop-macOS-arm64.dmg`
 - `https://download.rabah.ai/latest/SHA256SUMS.txt`
-- `https://download.rabah.ai/latest.json`
+- `https://download.rabah.ai/desktop/latest.json`
 
-Starting with `0.1.42`, installed applications check the signed Tauri updater
-manifest at `https://download.rabah.ai/updater/latest.json`. Release assets must
+Rabah Desktop checks the signed Tauri updater manifest at
+`https://download.rabah.ai/desktop/updater/latest.json`. Release assets must
 also contain the Windows installer signature and the signed macOS app archive;
 the R2 workflow rejects incomplete updater releases.
 
-The `latest.json` manifest points at immutable, versioned R2 object URLs and
+The `desktop/latest.json` manifest points at immutable, versioned R2 object URLs and
 includes each installer's SHA-256 digest and byte size. GitHub Actions selects
 the highest semantic version that has both platform installers and a checksum
-file. This includes pre-releases while Rabah Companion remains in testing.
+file. This includes pre-releases while Rabah Desktop remains in testing.
 
-R2 retains only that selected version. Older installers remain available from
-GitHub Releases.
+The `rabah-desktop-downloads` bucket retains only the selected Desktop version.
+Older installers remain available from GitHub Releases. During the bucket
+migration every existing object, including third-party mirrors and the frozen
+legacy `/updater/latest.json`, is copied and checked before the domain moves.
+Legacy `Rabah-Companion-*` paths remain unchanged for existing downloads.
+The old bucket is retained until a separate cleanup confirmation.
 
 ## ChatGPT Desktop mirror
 
-Rabah Companion installs ChatGPT Desktop from `https://download.rabah.ai/codex/`
+Rabah Desktop installs ChatGPT Desktop from `https://download.rabah.ai/codex/`
 only; the scheduled workflow is the one component that contacts OpenAI.
 
 - `codex/latest.json` lists each platform with its own version, the versioned
@@ -83,6 +87,6 @@ only; the scheduled workflow is the one component that contacts OpenAI.
 
 ## Security
 
-Never download Rabah Companion from an unlisted third-party mirror. Release
+Never download Rabah Desktop from an unlisted third-party mirror. Release
 assets are immutable; a corrected build receives a new version instead of
 silently replacing an existing file.

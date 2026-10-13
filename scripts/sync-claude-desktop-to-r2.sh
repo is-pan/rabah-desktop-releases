@@ -8,7 +8,7 @@ for command_name in aws curl jq python3 shasum hdiutil codesign lipo; do
   }
 done
 : "${R2_ACCOUNT_ID:?}" "${R2_ACCESS_KEY_ID:?}" "${R2_SECRET_ACCESS_KEY:?}" "${R2_BUCKET_NAME:?}" "${DOWNLOAD_BASE_URL:?}"
-[[ "$R2_BUCKET_NAME" == "rabah-companion-downloads" ]] || exit 1
+[[ "$R2_BUCKET_NAME" == "rabah-desktop-downloads" ]] || exit 1
 
 endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
 base_url="${DOWNLOAD_BASE_URL%/}"

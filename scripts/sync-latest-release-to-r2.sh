@@ -16,14 +16,14 @@ done
 : "${R2_BUCKET_NAME:?R2_BUCKET_NAME is required}"
 : "${DOWNLOAD_BASE_URL:?DOWNLOAD_BASE_URL is required}"
 
-if [[ "$R2_BUCKET_NAME" != "rabah-companion-downloads" ]]; then
+if [[ "$R2_BUCKET_NAME" != "rabah-desktop-downloads" ]]; then
   printf 'Refusing to sync or delete objects in unexpected bucket: %s\n' "$R2_BUCKET_NAME" >&2
   exit 1
 fi
 
 endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
 download_base_url="${DOWNLOAD_BASE_URL%/}"
-work_dir="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/rabah-companion-r2-sync"
+work_dir="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/rabah-desktop-r2-sync"
 
 mkdir -p "$work_dir"
 find "$work_dir" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
@@ -39,11 +39,14 @@ gh api \
   -H "Accept: application/vnd.github+json" \
   "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$releases_json"
 
-mapfile -t candidate_tags < <(
+candidate_tags=()
+while IFS= read -r tag; do
+  candidate_tags+=("$tag")
+done < <(
   jq -r '
     .[]
     | select(.draft == false)
-    | select(.tag_name | test("^companion-v[0-9]+\\.[0-9]+\\.[0-9]+$"))
+    | select(.tag_name | test("^desktop-v[0-9]+\\.[0-9]+\\.[0-9]+$"))
     | .tag_name
   ' "$releases_json" | sort -V -r
 )
@@ -51,10 +54,10 @@ mapfile -t candidate_tags < <(
 selected_release=""
 for candidate_tag in "${candidate_tags[@]}"; do
   candidate_release="$(jq -c --arg tag "$candidate_tag" '.[] | select(.tag_name == $tag)' "$releases_json")"
-  candidate_version="${candidate_tag#companion-v}"
-  candidate_windows="Rabah-Companion-Windows-x64-v${candidate_version}-setup.exe"
+  candidate_version="${candidate_tag#desktop-v}"
+  candidate_windows="Rabah-Desktop-Windows-x64-v${candidate_version}-setup.exe"
   candidate_windows_signature="${candidate_windows}.sig"
-  candidate_macos_updater="Rabah-Companion-macOS-arm64-v${candidate_version}.app.tar.gz"
+  candidate_macos_updater="Rabah-Desktop-macOS-arm64-v${candidate_version}.app.tar.gz"
   candidate_macos_signature="${candidate_macos_updater}.sig"
 
   candidate_macos="$(
@@ -62,8 +65,8 @@ for candidate_tag in "${candidate_tags[@]}"; do
       [
         .assets[].name
         | select(
-            . == ("Rabah-Companion-macOS-arm64-v" + $version + ".dmg")
-            or . == ("Rabah-Companion-macOS-arm64-v" + $version + "-repacked.dmg")
+            . == ("Rabah-Desktop-macOS-arm64-v" + $version + ".dmg")
+            or . == ("Rabah-Desktop-macOS-arm64-v" + $version + "-repacked.dmg")
           )
       ][0] // empty
     ' <<<"$candidate_release"
@@ -175,13 +178,15 @@ windows_version_key="${version_prefix}/${windows_asset}"
 macos_version_key="${version_prefix}/${macos_asset}"
 checksums_version_key="${version_prefix}/SHA256SUMS.txt"
 if [[ "$updater_enabled" == "true" ]]; then
+  checksum_for "$windows_signature_asset" >/dev/null
+  checksum_for "$macos_signature_asset" >/dev/null
   macos_updater_sha256="$(checksum_for "$macos_updater_asset")"
   python3 - "$release_dir/$macos_updater_asset" <<'PY'
 import sys
 import tarfile
 
 archive = sys.argv[1]
-expected_root = "Rabah Companion.app"
+expected_root = "Rabah Desktop.app"
 with tarfile.open(archive, "r:gz") as package:
     names = package.getnames()
 
@@ -226,6 +231,14 @@ upload_file() {
   fi
 
   aws "${args[@]}"
+  local expected_hash actual_hash
+  expected_hash="$(sha256sum "$source_path" | awk '{print $1}')"
+  actual_hash="$(aws s3 cp "s3://${R2_BUCKET_NAME}/${object_key}" - \
+    --endpoint-url "$endpoint" --only-show-errors | sha256sum | awk '{print $1}')"
+  if [[ "$actual_hash" != "$expected_hash" ]]; then
+    printf 'R2 readback checksum mismatch: %s\n' "$object_key" >&2
+    exit 1
+  fi
 }
 
 printf 'Uploading immutable version objects...\n'
@@ -268,19 +281,19 @@ fi
 printf 'Updating stable latest download paths...\n'
 upload_file \
   "$release_dir/$windows_asset" \
-  "latest/Rabah-Companion-Windows-x64-setup.exe" \
+  "latest/Rabah-Desktop-Windows-x64-setup.exe" \
   "application/vnd.microsoft.portable-executable" \
   "public, max-age=300, must-revalidate" \
   "attachment; filename=\"$windows_asset\""
 upload_file \
   "$release_dir/$macos_asset" \
-  "latest/Rabah-Companion-macOS-arm64.dmg" \
+  "latest/Rabah-Desktop-macOS-arm64.dmg" \
   "application/x-apple-diskimage" \
   "public, max-age=300, must-revalidate" \
   "attachment; filename=\"$macos_asset\""
 upload_file \
   "$release_dir/SHA256SUMS.txt" \
-  "latest/SHA256SUMS.txt" \
+  "latest/Rabah-Desktop-SHA256SUMS.txt" \
   "text/plain; charset=utf-8" \
   "public, max-age=300, must-revalidate"
 
@@ -292,11 +305,11 @@ jq -n \
   --arg published_at "$published_at" \
   --arg synced_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
   --arg windows_url "${download_base_url}/${windows_version_key}" \
-  --arg windows_latest_url "${download_base_url}/latest/Rabah-Companion-Windows-x64-setup.exe" \
+  --arg windows_latest_url "${download_base_url}/latest/Rabah-Desktop-Windows-x64-setup.exe" \
   --arg windows_sha256 "$windows_sha256" \
   --argjson windows_size "$windows_size" \
   --arg macos_url "${download_base_url}/${macos_version_key}" \
-  --arg macos_latest_url "${download_base_url}/latest/Rabah-Companion-macOS-arm64.dmg" \
+  --arg macos_latest_url "${download_base_url}/latest/Rabah-Desktop-macOS-arm64.dmg" \
   --arg macos_sha256 "$macos_sha256" \
   --argjson macos_size "$macos_size" \
   --arg checksums_url "${download_base_url}/${checksums_version_key}" \
@@ -354,7 +367,7 @@ if [[ "$updater_enabled" == "true" ]]; then
     }' > "$updater_json"
   upload_file \
     "$updater_json" \
-    "updater/latest.json" \
+    "desktop/updater/latest.json" \
     "application/json; charset=utf-8" \
     "no-cache, no-store, must-revalidate"
   printf 'Updater manifest published for %s (macOS updater SHA-256 %s)\n' \
@@ -362,23 +375,23 @@ if [[ "$updater_enabled" == "true" ]]; then
 else
   aws s3api delete-object \
     --bucket "$R2_BUCKET_NAME" \
-    --key "updater/latest.json" \
+    --key "desktop/updater/latest.json" \
     --endpoint-url "$endpoint" \
     >/dev/null
 fi
 
 # Publish the ordinary manifest last. When updater metadata is required it is
-# already available, so download-page and in-app consumers converge together.
+# already available, so website downloads and in-app consumers converge together.
 upload_file \
   "$latest_json" \
-  "latest.json" \
+  "desktop/latest.json" \
   "application/json; charset=utf-8" \
   "no-cache, no-store, must-revalidate"
 
 printf 'Removing superseded version objects from the isolated download bucket...\n'
 while IFS= read -r object_key; do
   [[ -z "$object_key" ]] && continue
-  if [[ "$object_key" != "${version_prefix}/"* ]]; then
+  if [[ "$object_key" == versions/desktop-v* && "$object_key" != "${version_prefix}/"* ]]; then
     aws s3api delete-object \
       --bucket "$R2_BUCKET_NAME" \
       --key "$object_key" \

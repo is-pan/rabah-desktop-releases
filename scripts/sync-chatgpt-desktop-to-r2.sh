@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# GitHub Actions is the only component that contacts OpenAI. Companion
+# GitHub Actions is the only component that contacts OpenAI. Rabah Desktop
 # clients consume the R2 catalog and R2 objects exclusively.
 #
 # Runs on a macOS runner: the DMG carries no version metadata, so its app is
@@ -14,7 +14,7 @@ for command_name in aws curl jq python3 shasum hdiutil codesign lipo; do
   }
 done
 : "$R2_ACCOUNT_ID" "$R2_ACCESS_KEY_ID" "$R2_SECRET_ACCESS_KEY" "$R2_BUCKET_NAME" "$DOWNLOAD_BASE_URL"
-[[ "$R2_BUCKET_NAME" == "rabah-companion-downloads" ]] || exit 1
+[[ "$R2_BUCKET_NAME" == "rabah-desktop-downloads" ]] || exit 1
 
 endpoint="https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
 base_url="$(printf '%s' "$DOWNLOAD_BASE_URL" | sed 's:/*$::')"
@@ -203,7 +203,7 @@ jq -n --arg wv "$windows_version" --arg mv "$mac_version" --arg t "$(date -u +'%
 upload "$catalog" "codex/latest.json" "application/json; charset=utf-8" "no-cache, no-store, must-revalidate"
 
 # --- Retain the current and the previous version ---------------------------
-# A Companion that read the previous catalog moments ago may still be
+# A Rabah Desktop that read the previous catalog moments ago may still be
 # downloading from it, so its objects survive one more publish. Without a
 # readable previous catalog nothing is deleted this run.
 if [[ ! -s "$previous_catalog" ]]; then
