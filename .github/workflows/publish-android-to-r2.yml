@@ -1,0 +1,53 @@
+name: Publish Android APK to R2
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Android release tag (android-v...)
+        required: true
+        type: string
+      asset_name:
+        description: APK asset filename
+        required: true
+        type: string
+      sha256:
+        description: Expected SHA-256 of the original APK
+        required: true
+        type: string
+      size_bytes:
+        description: Expected APK size in bytes
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-android-to-r2
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      ANDROID_RELEASE_TAG: ${{ inputs.release_tag }}
+      ANDROID_ASSET_NAME: ${{ inputs.asset_name }}
+      ANDROID_SHA256: ${{ inputs.sha256 }}
+      ANDROID_SIZE_BYTES: ${{ inputs.size_bytes }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure AWS CLI is available
+        shell: bash
+        run: |
+          if ! command -v aws >/dev/null 2>&1; then
+            pipx install awscli
+          fi
+      - name: Verify and publish APK
+        shell: bash
+        run: bash scripts/publish-android-to-r2.sh
