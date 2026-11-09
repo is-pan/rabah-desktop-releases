@@ -67,6 +67,25 @@ legacy `/updater/latest.json`, is copied and checked before the domain moves.
 Legacy `Rabah-Companion-*` paths remain unchanged for existing downloads.
 The old bucket is retained until a separate cleanup confirmation.
 
+## Android app updates
+
+Android keeps the manual download link `https://download.rabah.ai/latest/Rabah-Android.apk`.
+The Android app checks `https://download.rabah.ai/android/latest.json`, which points to an
+immutable `android/<release-tag>/<apk>` object and contains the actual APK's `version_code`,
+`version`, package name, minimum SDK, SHA-256, size, release date and notes.
+
+The Android publishing workflow verifies the existing APK signing identity and reads version
+metadata with Android SDK tools. Each different APK must increase `versionCode`; re-running
+an identical release is allowed. The script validates metadata before writes, uploads and
+reads back the APK, then publishes the manifest last with `no-cache, no-store, must-revalidate`.
+It preserves earlier Android version objects so an already selected update remains available.
+A public CDN readback is still needed before declaring the release live because an outer
+cache rule can override object metadata.
+
+The app checks quietly after startup and at most every six hours while foregrounded.
+Checking never downloads an APK; download and the Android installer require user action.
+The first app version containing the updater must be installed manually.
+
 ## ChatGPT Desktop mirror
 
 Rabah Desktop installs ChatGPT Desktop from `https://download.rabah.ai/codex/`

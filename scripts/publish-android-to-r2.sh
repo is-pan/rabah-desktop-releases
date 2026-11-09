@@ -9,6 +9,9 @@ set -euo pipefail
 : "${ANDROID_ASSET_NAME:?}"
 : "${ANDROID_SHA256:?}"
 : "${ANDROID_SIZE_BYTES:?}"
+: "${ANDROID_APKSIGNER:?Path to Android SDK apksigner}"
+: "${ANDROID_AAPT:?Path to Android SDK aapt}"
+: "${ANDROID_SIGNER_SHA256:?Expected APK signing certificate SHA-256}"
 
 if [[ ! "$ANDROID_RELEASE_TAG" =~ ^android-v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]] ||
    [[ ! "$ANDROID_ASSET_NAME" =~ ^Rabah-Android-[A-Za-z0-9.-]+\.apk$ ]] ||
@@ -31,6 +34,14 @@ work_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/rabah-android-publish.XXXXXX")"
 gh release download "$ANDROID_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
   --pattern "$ANDROID_ASSET_NAME" --dir "$work_dir"
 apk="$work_dir/$ANDROID_ASSET_NAME"
+
+"$ANDROID_APKSIGNER" verify --verbose --print-certs "$apk" > "$work_dir/signature.txt"
+if ! awk -v expected="$ANDROID_SIGNER_SHA256" '$0 == "Signer #1 certificate SHA-256 digest: " expected { found=1 } END { exit !found }' "$work_dir/signature.txt"; then
+  printf 'Unexpected Android signing certificate.\n' >&2
+  exit 1
+fi
+"$ANDROID_AAPT" dump badging "$apk" > "$work_dir/badging.txt"
+gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${ANDROID_RELEASE_TAG}" > "$work_dir/release.json"
 
 verify_file() {
   local file="$1"
@@ -59,6 +70,18 @@ upload_and_verify() {
   fi
 }
 
+# Generate metadata from the actual signed APK. Refuse stale or same-code/different-byte releases.
+aws s3api list-objects-v2 --bucket "$bucket" --prefix 'android/latest.json' \
+  --endpoint-url "$endpoint" --output json > "$work_dir/manifest-existing.json"
+if jq -e 'any(.Contents[]?; .Key == "android/latest.json")' "$work_dir/manifest-existing.json" >/dev/null; then
+  aws s3 cp "s3://${bucket}/android/latest.json" "$work_dir/previous.json" --endpoint-url "$endpoint" --only-show-errors
+fi
+python3 scripts/android-update-manifest.py \
+  --badging "$work_dir/badging.txt" --release "$work_dir/release.json" \
+  --tag "$ANDROID_RELEASE_TAG" --asset "$ANDROID_ASSET_NAME" \
+  --sha256 "$ANDROID_SHA256" --size "$ANDROID_SIZE_BYTES" \
+  --previous "$work_dir/previous.json" --output "$work_dir/latest.json"
+
 version_key="android/${ANDROID_RELEASE_TAG}/${ANDROID_ASSET_NAME}"
 # Never replace different bytes at an immutable version URL.
 aws s3api list-objects-v2 --bucket "$bucket" --prefix "$version_key" \
@@ -74,5 +97,11 @@ else
   upload_and_verify "$version_key" 'public, max-age=31536000, immutable'
 fi
 upload_and_verify 'latest/Rabah-Android.apk' 'public, max-age=60, must-revalidate'
+# The update pointer changes only after the exact version object and fixed APK passed readback.
+aws s3 cp "$work_dir/latest.json" "s3://${bucket}/android/latest.json" --endpoint-url "$endpoint" \
+  --only-show-errors --content-type 'application/json; charset=utf-8' \
+  --cache-control 'no-cache, no-store, must-revalidate'
+aws s3 cp "s3://${bucket}/android/latest.json" "$work_dir/latest-readback.json" --endpoint-url "$endpoint" --only-show-errors
+cmp "$work_dir/latest.json" "$work_dir/latest-readback.json"
 
 printf 'Published and verified:\nhttps://download.rabah.ai/%s\nhttps://download.rabah.ai/latest/Rabah-Android.apk\n' "$version_key"

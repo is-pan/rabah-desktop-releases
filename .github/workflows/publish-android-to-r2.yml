@@ -42,6 +42,14 @@ jobs:
       ANDROID_SIZE_BYTES: ${{ inputs.size_bytes }}
     steps:
       - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v3
+      - name: Prepare Android APK inspection tools
+        run: sdkmanager 'build-tools;36.0.0'
+      - name: Set trusted APK inspection tools and signing identity
+        run: |
+          echo "ANDROID_APKSIGNER=$ANDROID_HOME/build-tools/36.0.0/apksigner" >> "$GITHUB_ENV"
+          echo "ANDROID_AAPT=$ANDROID_HOME/build-tools/36.0.0/aapt" >> "$GITHUB_ENV"
+          echo "ANDROID_SIGNER_SHA256=beea4fd533a6a32b166ba8d016d65d175c3fea6689e3fa96df156bac0b7ba71d" >> "$GITHUB_ENV"
       - name: Ensure AWS CLI is available
         shell: bash
         run: |
