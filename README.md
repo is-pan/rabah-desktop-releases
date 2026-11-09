@@ -86,6 +86,20 @@ The app checks quietly after startup and at most every six hours while foregroun
 Checking never downloads an APK; download and the Android installer require user action.
 The first app version containing the updater must be installed manually.
 
+## iOS TestFlight updates
+
+Rabah Chat on iOS checks `https://download.rabah.ai/ios/testflight/latest.json`.
+The manifest contains the version, build, notes, minimum iOS version and verified
+TestFlight invitation link. Installation is performed by TestFlight; no IPA is
+downloaded or installed by the app.
+
+Publish only after Apple processing, any required Beta review and assignment to
+the intended tester group are complete. Save that verification in
+`ios/release-record.json`, then run the `Publish iOS TestFlight update metadata`
+workflow. The publisher rejects an unverified release, an older version or a
+changed record for the same build, and reads the uploaded object back before
+reporting success. Check the public URL as well to verify CDN delivery.
+
 ## ChatGPT Desktop mirror
 
 Rabah Desktop installs ChatGPT Desktop from `https://download.rabah.ai/codex/`

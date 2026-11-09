@@ -1,0 +1,37 @@
+name: Publish iOS TestFlight update metadata
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-ios-update-to-r2
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      IOS_RELEASE_RECORD: ${{ github.workspace }}/ios/release-record.json
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release metadata and publishing tools
+        shell: bash
+        run: |
+          python3 -m unittest discover -s scripts -p test_ios_update_manifest.py
+          bash -n scripts/publish-ios-update-to-r2.sh
+      - name: Ensure AWS CLI is available
+        shell: bash
+        run: |
+          if ! command -v aws >/dev/null 2>&1; then
+            pipx install awscli
+          fi
+      - name: Publish verified TestFlight release metadata
+        shell: bash
+        run: bash scripts/publish-ios-update-to-r2.sh

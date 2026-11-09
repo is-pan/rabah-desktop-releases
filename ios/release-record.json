@@ -1,0 +1,11 @@
+{
+  "channel": "testflight",
+  "bundle_id": "com.rabah.chat",
+  "version": "0.2.0",
+  "build": "2026111001",
+  "minimum_os_version": "18.0",
+  "published_at": "2026-11-09T21:02:24Z",
+  "notes": "补齐视频生成等待期间的实时预览、会话切换与返回恢复，减少重复等待和重复消息。新增账户页版本信息、检查更新和 TestFlight 更新入口。",
+  "testflight_url": "https://testflight.apple.com/join/xrjzPdta",
+  "available_to_testers": true
+}
