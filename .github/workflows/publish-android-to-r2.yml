@@ -43,8 +43,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: android-actions/setup-android@v3
-      - name: Prepare Android APK inspection tools
-        run: sdkmanager 'build-tools;36.0.0'
+        with:
+          packages: 'build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
       - name: Set trusted APK inspection tools and signing identity
         run: |
           echo "ANDROID_APKSIGNER=$ANDROID_HOME/build-tools/36.0.0/apksigner" >> "$GITHUB_ENV"
