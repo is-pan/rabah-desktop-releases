@@ -22,10 +22,11 @@ windows_redirect="https://api.anthropic.com/api/desktop/win32/x64/msix/latest/re
 macos_redirect="https://api.anthropic.com/api/desktop/darwin/universal/dmg/latest/redirect"
 team_id="Q6L2SF6YDW"
 version_pattern='^[0-9]+(\.[0-9]+){1,3}$'
+windows_key_pattern='claude/windows/[0-9]+(\.[0-9]+){1,3}/Claude-x64\.msix'
+macos_key_pattern='claude/macos/[0-9]+(\.[0-9]+){1,3}/Claude-universal\.dmg'
 
 size_of() { wc -c < "$1" | tr -d ' '; }
 sha256() { shasum -a 256 "$1" | awk '{print tolower($1)}'; }
-key_of() { printf '%s' "${1#"$base_url"/}"; }
 normalize_version() { printf '%s\n' "$1" | sed -E 's/(\.0)+$//'; }
 
 download() {
@@ -63,12 +64,28 @@ macos_release_version="${BASH_REMATCH[1]}"
 [[ "$macos_release_version" =~ $version_pattern ]]
 macos_source="$macos_location"
 
-# Read the current catalog before downloading ~GB-sized installers.  If both
-# objects are still present and unchanged, a scheduled run is a no-op.  A
-# manual force run is the escape hatch for repairing or revalidating objects.
-previous_catalog="$work_dir/metadata/previous.json"
-curl --fail --location --proto '=https' --tlsv1.2 --connect-timeout 20 --max-time 30 -sS \
-  "$base_url/claude/latest.json" -o "$previous_catalog" || rm -f "$previous_catalog"
+# Validate both entries before they can be used to skip a sync or prune objects.
+catalog_rows() {
+  jq -ers --arg base "$base_url/" --arg windows "$windows_key_pattern" --arg macos "$macos_key_pattern" '
+    def row($pattern):
+      if (.version | type == "string" and test("\\A[0-9]+(\\.[0-9]+){1,3}\\z")) and
+         (.url | type == "string" and startswith($base)) and
+         (.size | type == "number" and . > 0 and floor == .) and
+         (.sha256 | type == "string" and test("\\A[0-9a-f]{64}\\z"))
+      then
+        (.url | ltrimstr($base)) as $key
+        | if ($key | test("\\A" + $pattern + "\\z"))
+          then [.version, $key, .size, .sha256] | @tsv
+          else error("Invalid Claude catalog object key")
+          end
+      else error("Invalid Claude catalog entry")
+      end;
+    if length == 1 then
+      .[0].platforms | (.["windows-x86_64"] | row($windows)), (.["darwin-universal"] | row($macos))
+    else error("Expected one Claude catalog")
+    end
+  ' "$1"
+}
 
 object_intact() {
   local key="$1" expected_size="$2" expected_sha="$3" actual_size actual_sha
@@ -81,19 +98,30 @@ object_intact() {
 }
 
 mirror_is_current() {
-  local catalog="$1" url size sha key
-  [[ "$(normalize_version "$(jq -r '.platforms["windows-x86_64"].version // empty' "$catalog")")" == "$(normalize_version "$windows_version")" ]] || return 1
-  [[ "$(jq -r '.platforms["darwin-universal"].version // empty' "$catalog")" == "$macos_version" ]] || return 1
-  while IFS=$'\t' read -r url size sha; do
-    [[ -n "$url" && -n "$size" && -n "$sha" ]] || return 1
-    key="$(key_of "$url")"
-    object_intact "$key" "$size" "$sha" || return 1
-  done < <(jq -r '.platforms[] | [.url, .size, .sha256] | @tsv' "$catalog")
+  local win_version win_key win_size win_sha mac_version mac_key mac_size mac_sha
+  {
+    IFS=$'\t' read -r win_version win_key win_size win_sha &&
+      IFS=$'\t' read -r mac_version mac_key mac_size mac_sha
+  } <<< "$1" || return 1
+  [[ "$(normalize_version "$win_version")" == "$(normalize_version "$windows_version")" &&
+     "$mac_version" == "$macos_release_version" ]] || return 1
+  object_intact "$win_key" "$win_size" "$win_sha" &&
+    object_intact "$mac_key" "$mac_size" "$mac_sha"
 }
 
-if [[ "${FORCE_CLAUDE_DESKTOP_SYNC:-false}" != "true" && -s "$previous_catalog" ]] &&
-    mirror_is_current "$previous_catalog"; then
-  printf 'Claude Desktop %s is already mirrored and intact.\n' "$windows_version"
+# Use the previous catalog for both the no-op check and retention. A failed
+# parse can produce partial jq output that must never be used for either.
+previous_catalog="$work_dir/metadata/previous.json"
+previous_rows=""
+if curl --fail --location --proto '=https' --tlsv1.2 --connect-timeout 20 --max-time 30 -sS \
+    "$base_url/claude/latest.json" -o "$previous_catalog"; then
+  previous_rows="$(catalog_rows "$previous_catalog")" || previous_rows=""
+fi
+
+if [[ "${FORCE_CLAUDE_DESKTOP_SYNC:-false}" != "true" && -n "$previous_rows" ]] &&
+    mirror_is_current "$previous_rows"; then
+  printf 'Claude Desktop Windows %s / macOS %s is already mirrored and intact.\n' \
+    "$windows_version" "$macos_release_version"
   exit 0
 fi
 
@@ -198,17 +226,22 @@ jq -n --arg wv "$windows_version" --arg mv "$macos_version" --arg t "$(date -u +
   '{schemaVersion:1,product:"Claude Desktop",publishedAt:$t,platforms:{"windows-x86_64":{version:$wv,url:$wu,sha256:$wh,size:$ws},"darwin-universal":{version:$mv,url:$mu,sha256:$mh,size:$ms}}}' > "$catalog"
 upload "$catalog" "claude/latest.json" "application/json; charset=utf-8" "no-cache, no-store, must-revalidate"
 
-if [[ -s "$previous_catalog" ]]; then
-  keep="$work_dir/metadata/keep.txt"
-  {
-    printf '%s\n' claude/latest.json "$windows_key" "$macos_key"
-    jq -r '.platforms[] | .url' "$previous_catalog" | while IFS= read -r url; do key_of "$url"; done
-  } > "$keep"
+prune_old_packages() {
+  local previous_rows="$1" previous_keys current_keys keep listing key
+  [[ -n "$previous_rows" ]] || return 0
+  previous_keys="$(cut -f2 <<< "$previous_rows")"
+  current_keys="$(printf '%s\n' "$windows_key" "$macos_key")"
+  # Repairing the current objects must not remove the previous release.
+  [[ "$previous_keys" != "$current_keys" ]] || return 0
+  keep="$(printf '%s\n' "$current_keys" "$previous_keys")"
+  listing="$(aws s3api list-objects-v2 --bucket "$R2_BUCKET_NAME" --prefix claude/ \
+    --endpoint-url "$endpoint" --query 'Contents[].Key' --output text | tr '\t' '\n')" || return 1
   while IFS= read -r key; do
-    [[ -z "$key" || "$key" == "None" ]] && continue
-    grep -qxF "$key" "$keep" && continue
-    aws s3api delete-object --bucket "$R2_BUCKET_NAME" --key "$key" --endpoint-url "$endpoint" >/dev/null
-  done < <(aws s3api list-objects-v2 --bucket "$R2_BUCKET_NAME" --prefix claude/ \
-    --endpoint-url "$endpoint" --query 'Contents[].Key' --output text | tr '\t' '\n')
-fi
+    [[ "$key" =~ ^($windows_key_pattern|$macos_key_pattern)$ ]] || continue
+    grep -qxF -- "$key" <<< "$keep" && continue
+    aws s3api delete-object --bucket "$R2_BUCKET_NAME" --key "$key" --endpoint-url "$endpoint" >/dev/null || return 1
+  done <<< "$listing"
+}
+
+prune_old_packages "$previous_rows"
 printf 'Claude Desktop R2 mirror published: Windows %s, macOS %s\n' "$windows_version" "$macos_version"
